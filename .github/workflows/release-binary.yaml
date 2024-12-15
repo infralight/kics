@@ -21,6 +21,7 @@ jobs:
       - name: Build Binary
         run: |
           GOARCH=arm64 go build -o kics ./cmd/console/main.go
+          GOARCH=amd64 go build -o kics-amd64 ./cmd/console/main.go
 
       - name: Create Release
         uses: ncipollo/release-action@v1
