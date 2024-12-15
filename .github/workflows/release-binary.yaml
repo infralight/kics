@@ -30,5 +30,7 @@ jobs:
           tag: v${{ github.run_number }}
           name: "Release v${{ github.run_number }}"
           body: |
-            Automatic release of the KICS binary built for arm64.
-          artifacts: "kics"
+            Automatic release of the KICS binaries built for arm64 and amd64.
+          artifacts: |
+            kics
+            kics-amd64
