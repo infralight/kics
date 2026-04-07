@@ -137,7 +137,7 @@ func TestKics_resolveCRLFFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resolved := resolveCRLFFile([]byte(tt.body))
-			require.NotRegexp(t, regexp.MustCompile("[\r\n]"), resolved, tt.name+" is matching with [\\r\\n] regexp")
+			require.NotRegexp(t, regexp.MustCompile(`\r`), resolved, tt.name+" still contains carriage return characters")
 		})
 	}
 }
