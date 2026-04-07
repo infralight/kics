@@ -94,10 +94,10 @@ jobs:
           ./e2e-report -test-path ${CWD} -test-name results.json -report-path ${CWD} -report-name e2e-report.html
       - name: Get docker name
         run: |
-          DOCKER_NAME=$(echo ${{ matrix.kics-docker }} | sed 's/\//-/')
+          echo "DOCKER_NAME=$(echo ${{ matrix.kics-docker }} | sed 's/\//-/')" >> $GITHUB_ENV
       - name: Archive test report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: e2e-tests-report-$DOCKER_NAME
+          name: e2e-tests-report-${{ env.DOCKER_NAME }}
           path: e2e-report.html
