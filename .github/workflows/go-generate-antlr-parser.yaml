@@ -3,7 +3,7 @@ name: go-generate-antlr-parser
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [main, master]
     paths:
       - "pkg/parser/jsonfilter/JSONFilter.g4"
 jobs:

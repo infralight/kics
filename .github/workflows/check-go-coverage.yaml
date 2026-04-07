@@ -2,7 +2,7 @@ name: check-go-coverage
 
 on:
   pull_request:
-    branches: [master]
+    branches: [main, master]
 
 jobs:
   coverage:
