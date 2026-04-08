@@ -59,3 +59,4 @@ payload.json
 
 # ANTLR files
 .antlr
+testfiles/1.tf

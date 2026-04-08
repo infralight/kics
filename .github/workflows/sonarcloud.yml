@@ -2,7 +2,7 @@ name: static-analysis
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
 
 jobs:
   sonarcloud:

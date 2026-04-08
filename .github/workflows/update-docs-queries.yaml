@@ -3,7 +3,7 @@ name: update-queries-docs
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [main, master]
     paths:
       - "assets/queries/**/metadata.json"
       - "assets/queries/**/test/**"

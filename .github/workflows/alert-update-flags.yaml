@@ -3,7 +3,7 @@ name: alert-update-flags
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [main, master]
     paths:
       - "internal/console/assets/*-flags.json"
 
