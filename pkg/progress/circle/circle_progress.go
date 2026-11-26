@@ -3,6 +3,7 @@ package circle
 import (
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/Checkmarx/kics/v2/internal/constants"
@@ -20,6 +21,7 @@ type ProgressBar struct {
 	label string
 	pBar  *pb.ProgressBar
 	close func() error
+	done  chan struct{}
 }
 
 // NewProgressBar creates a new instance of a Circle Progress Bar
@@ -33,10 +35,14 @@ func NewProgressBar(label string, silent bool) ProgressBar {
 	}
 	newPb.Start()
 
+	done := make(chan struct{})
+	var once sync.Once
 	return ProgressBar{
 		label: label,
 		pBar:  newPb,
+		done:  done,
 		close: func() error {
+			once.Do(func() { close(done) })
 			newPb.Finish()
 			return nil
 		},
@@ -47,8 +53,11 @@ func NewProgressBar(label string, silent bool) ProgressBar {
 func (p ProgressBar) Start() {
 	for { // increment until the Close func is called
 		p.pBar.Increment()
-		// lower cpu usage from infinite loop
-		time.Sleep(time.Millisecond * sleepTimeout)
+		select {
+		case <-p.done: // without this a long-lived process keeps one goroutine per bar forever
+			return
+		case <-time.After(time.Millisecond * sleepTimeout): // lower cpu usage from infinite loop
+		}
 	}
 }
 

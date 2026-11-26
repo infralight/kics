@@ -3,6 +3,7 @@ package circle
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/Checkmarx/kics/v2/internal/constants"
 	"github.com/cheggaaa/pb/v3"
@@ -71,5 +72,21 @@ func TestCircle_Start(t *testing.T) {
 			err := tt.fields.pbar.Close()
 			require.NoError(t, err)
 		})
+	}
+}
+
+func TestCircle_StartReturnsAfterClose(t *testing.T) {
+	bar := NewProgressBar("test", true)
+	stopped := make(chan struct{})
+	go func() {
+		bar.Start()
+		close(stopped)
+	}()
+	require.NoError(t, bar.Close())
+	require.NoError(t, bar.Close(), "a second Close must not panic")
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start is still running after Close")
 	}
 }
