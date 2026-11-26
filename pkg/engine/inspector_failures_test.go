@@ -7,8 +7,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Checkmarx/kics/v2/internal/tracker"
+	"github.com/Checkmarx/kics/v2/pkg/detector"
 	"github.com/Checkmarx/kics/v2/pkg/model"
 	"github.com/open-policy-agent/opa/v1/rego"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,6 +75,39 @@ func TestRecordFailedQueryIsSafeAndKeepsTheFirstError(t *testing.T) {
 			require.Len(t, c.GetFailedQueries(), 51)
 			c.ResetFailedQueries()
 			require.Empty(t, c.GetFailedQueries())
+		})
+	}
+}
+
+// Workers build findings concurrently with one shared line detector; run with -race.
+// Mutation: keep the detector.SetupLogs call; every worker writes the detector's shared logger field.
+func TestDefaultVulnerabilityBuilderIsSafeAcrossWorkers(t *testing.T) {
+	cases := []struct {
+		name    string
+		workers int
+	}{
+		{name: "eight workers", workers: 8},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			shared := detector.NewDetectLine(3)
+			ctx := &QueryContext{
+				scanID: "scan",
+				Query: &PreparedQuery{Metadata: model.QueryMetadata{Query: "q", Metadata: map[string]interface{}{
+					"severity": model.SeverityInfo, "issueType": "IncorrectValue", "searchKey": "k"}}},
+				Files: map[string]model.FileMetadata{"doc": {LinesOriginalData: &[]string{}}},
+			}
+			var wg sync.WaitGroup
+			for range tc.workers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, err := DefaultVulnerabilityBuilder(ctx, &tracker.CITracker{}, map[string]interface{}{"documentId": "doc"},
+						shared, false, false, map[string]TransitionQueryInfo{})
+					assert.NoError(t, err)
+				}()
+			}
+			wg.Wait()
 		})
 	}
 }
