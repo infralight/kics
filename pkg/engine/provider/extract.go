@@ -146,6 +146,8 @@ func getPaths(g *getterStruct) (string, error) {
 	go func() {
 		defer wg.Done()
 		defer g.cancel()
+		getterMu.Lock()
+		defer getterMu.Unlock()
 		if err := client.Get(); err != nil {
 			errChan <- err
 		}
@@ -231,3 +233,7 @@ func isEncrypted(sourceFile string) bool {
 	}
 	return false
 }
+
+// getterMu serialises go-getter: its default getters are package globals that every
+// client.Get reconfigures, which races when several scans run in one process.
+var getterMu sync.Mutex

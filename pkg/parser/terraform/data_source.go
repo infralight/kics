@@ -3,6 +3,7 @@ package terraform
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/Checkmarx/kics/v2/pkg/parser/terraform/converter"
 	"path/filepath"
 	"sync"
 
@@ -73,7 +74,7 @@ type convertedPolicy struct {
 
 var mutexData = &sync.Mutex{}
 
-func getDataSourcePolicy(currentPath string) {
+func getDataSourcePolicy(inputVariableMap converter.VariableMap, currentPath string) {
 	tfFiles, err := filepath.Glob(filepath.Join(currentPath, "*.tf"))
 	if err != nil {
 		log.Error().Msg("Error getting .tf files to parse data source")
@@ -95,7 +96,7 @@ func getDataSourcePolicy(currentPath string) {
 		}
 		for _, block := range body.Blocks {
 			if block.Type == "data" && block.Labels[0] == "aws_iam_policy_document" && len(block.Labels) > 1 {
-				policyJSON := parseDataSourceBody(block.Body)
+				policyJSON := parseDataSourceBody(inputVariableMap, block.Body)
 				jsonMap[block.Labels[1]] = map[string]string{
 					"json": policyJSON,
 				}
@@ -216,7 +217,7 @@ func getStatementSpec() *hcldec.BlockListSpec {
 	}
 }
 
-func parseDataSourceBody(body *hclsyntax.Body) string {
+func parseDataSourceBody(inputVariableMap converter.VariableMap, body *hclsyntax.Body) string {
 	dataSourceSpec := &hcldec.ObjectSpec{
 		"id": &hcldec.AttrSpec{
 			Name:     "id",

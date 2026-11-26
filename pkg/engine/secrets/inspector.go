@@ -132,7 +132,7 @@ func NewInspector(
 		Add(helm.DetectKindLine{}, model.KindHELM).
 		Add(docker.DetectKindLine{}, model.KindDOCKER)
 
-	err = json.Unmarshal([]byte(assets.SecretsQueryMetadataJSON), &SecretsQueryMetadata)
+	err = loadSecretsQueryMetadata()
 	if err != nil {
 		return nil, err
 	}
@@ -707,3 +707,28 @@ func addToSecretTracker(secretTracker *[]SecretTracker, path string, line int, o
 		MaskedContent:    maskedCnt,
 	})
 }
+
+// loadSecretsQueryMetadata fills SecretsQueryMetadata from the embedded JSON. Upstream unmarshalled into
+// the package-global map on every scan, which is a concurrent map write when several scans run in one
+// process; the map is now rewritten only when the source JSON changed (never, outside tests).
+func loadSecretsQueryMetadata() error {
+	secretsMetaMu.Lock()
+	defer secretsMetaMu.Unlock()
+	if SecretsQueryMetadata != nil && secretsMetaSource == assets.SecretsQueryMetadataJSON {
+		return nil
+	}
+	meta := make(map[string]string, len(SecretsQueryMetadata))
+	for k, v := range SecretsQueryMetadata { // json.Unmarshal into the old map kept existing keys
+		meta[k] = v
+	}
+	if err := json.Unmarshal([]byte(assets.SecretsQueryMetadataJSON), &meta); err != nil {
+		return err
+	}
+	SecretsQueryMetadata, secretsMetaSource = meta, assets.SecretsQueryMetadataJSON
+	return nil
+}
+
+var (
+	secretsMetaMu     sync.Mutex
+	secretsMetaSource string
+)
