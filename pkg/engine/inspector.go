@@ -56,6 +56,9 @@ var ErrNoResult = errors.New("query: not result")
 // ErrInvalidResult - error representing invalid result
 var ErrInvalidResult = errors.New("query: invalid result format")
 
+// ErrDecodeTimeout - error representing a query whose findings could not all be decoded in time
+var ErrDecodeTimeout = errors.New("query: timeout decoding results")
+
 // QueryLoader is responsible for loading the queries for the inspector
 type QueryLoader struct {
 	commonLibrary     source.RegoLibraries
@@ -78,12 +81,14 @@ type PreparedQuery struct {
 // Inspector represents a list of compiled queries, a builder for vulnerabilities, an information tracker
 // a flag to enable coverage and the coverage report if it is enabled
 type Inspector struct {
-	QueryLoader    *QueryLoader
-	vb             VulnerabilityBuilder
-	tracker        Tracker
-	failedQueries  map[string]error
-	excludeResults map[string]bool
-	detector       *detector.DetectLine
+	QueryLoader   *QueryLoader
+	vb            VulnerabilityBuilder
+	tracker       Tracker
+	failedQueries map[string]error
+	// failedQueriesMu guards failedQueries: the result collector and the workers both write it.
+	failedQueriesMu sync.Mutex
+	excludeResults  map[string]bool
+	detector        *detector.DetectLine
 
 	enableCoverageReport      bool
 	coverageReport            cover.Report
@@ -388,7 +393,7 @@ func (c *Inspector) Inspect(
 				Query:    queries[result.queryID].Query,
 			}, true)
 
-			c.failedQueries[queries[result.queryID].Query] = result.err
+			c.recordFailedQuery(queries[result.queryID].Query, result.err, true)
 
 			continue
 		}
@@ -429,9 +434,32 @@ func (c *Inspector) GetCoverageReport() cover.Report {
 	return c.coverageReport
 }
 
-// GetFailedQueries returns a map of failed queries and the associated error
+// GetFailedQueries returns a copy of the map of failed queries and the associated error
 func (c *Inspector) GetFailedQueries() map[string]error {
-	return c.failedQueries
+	c.failedQueriesMu.Lock()
+	defer c.failedQueriesMu.Unlock()
+	failed := make(map[string]error, len(c.failedQueries))
+	for query, err := range c.failedQueries {
+		failed[query] = err
+	}
+	return failed
+}
+
+// ResetFailedQueries forgets every recorded failure, so a reused inspector reports only its next run's
+func (c *Inspector) ResetFailedQueries() {
+	c.failedQueriesMu.Lock()
+	defer c.failedQueriesMu.Unlock()
+	clear(c.failedQueries)
+}
+
+// recordFailedQuery stores err for query under the lock; without overwrite an earlier error is kept
+func (c *Inspector) recordFailedQuery(query string, err error, overwrite bool) {
+	c.failedQueriesMu.Lock()
+	defer c.failedQueriesMu.Unlock()
+	if _, ok := c.failedQueries[query]; ok && !overwrite {
+		return
+	}
+	c.failedQueries[query] = err
 }
 
 func (c *Inspector) doRun(ctx *QueryContext) (vulns []model.Vulnerability, err error) {
@@ -531,6 +559,8 @@ func (c *Inspector) DecodeQueryResults(
 			"Timeout processing the results of the query: %s %s",
 			ctx.Query.Metadata.Platform,
 			ctx.Query.Metadata.Query)
+		// The findings decoded so far are a prefix, not the query's result: report the query as failed.
+		return nil, errors.Wrapf(ErrDecodeTimeout, "%v", ctxTimeout.Err())
 	}
 
 	if failedDetectLine {
@@ -585,9 +615,7 @@ func getVulnerabilitiesFromQuery(ctx *QueryContext, c *Inspector, queryResultIte
 			Query:    ctx.Query.Metadata.Query,
 		}, true)
 
-		if _, ok := c.failedQueries[ctx.Query.Metadata.Query]; !ok {
-			c.failedQueries[ctx.Query.Metadata.Query] = err
-		}
+		c.recordFailedQuery(ctx.Query.Metadata.Query, err, false)
 
 		return nil, false
 	}

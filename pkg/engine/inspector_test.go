@@ -719,7 +719,7 @@ func TestInspector_DecodeQueryResults(t *testing.T) {
 		expected int
 	}{
 		{
-			name: "should_not_fail_when_timeout",
+			name: "should_fail_when_timeout",
 			args: args{
 				queryContext: newQueryContext(contextToUSe),
 				regoResult:   newResultset(),
@@ -735,7 +735,8 @@ func TestInspector_DecodeQueryResults(t *testing.T) {
 			timeoutDuration, _ := time.ParseDuration(tt.args.timeDuration)
 			myCtxTimeOut, _ := context.WithTimeout(contextToUSe, timeoutDuration)
 			result, err := c.DecodeQueryResults(&tt.args.queryContext, myCtxTimeOut, tt.args.regoResult)
-			assert.Nil(t, err, "Error not as expected")
+			// A decode cut short by its deadline is a failed query, not a complete result.
+			assert.ErrorIs(t, err, ErrDecodeTimeout, "Error not as expected")
 			assert.Equal(t, 0, len(result), "Array size is not as expected")
 		})
 	}
