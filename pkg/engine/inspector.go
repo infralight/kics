@@ -609,6 +609,21 @@ func (q QueryLoader) LoadQuery(ctx context.Context, query *model.QueryMetadata) 
 		if err != nil {
 			log.Debug().Msg("Could not merge common library input data")
 		}
+		// kics serve: reuse queries compiled once per process (qcache.go); the CLI skips this
+		if cachedQuery, cached, cacheErr := loadCached(q.commonLibrary, platformGeneralQuery, mergedInputData, query); cached {
+			if cacheErr != nil {
+				sentryReport.ReportSentry(&sentryReport.Report{
+					Message:  fmt.Sprintf("Inspector failed to prepare query for evaluation, query=%s", query.Query),
+					Err:      cacheErr,
+					Location: "func LoadQuery()",
+					Query:    query.Query,
+					Metadata: query.Metadata,
+					Platform: query.Platform,
+				}, true)
+				return nil, cacheErr
+			}
+			return cachedQuery, nil
+		}
 		store := inmem.NewFromReader(bytes.NewBufferString(mergedInputData))
 		opaQuery, err = rego.New(
 			rego.Query(regoQuery),
