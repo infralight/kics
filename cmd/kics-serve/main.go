@@ -1,27 +1,33 @@
 // kics-serve: a long-lived KICS process. Stock queries are compiled once at start (engine.WarmShared);
 // each job is a normal KICS scan (pkg/scan, same code path and JSON report as `kics scan`) run in-process.
 //
-//	kics-serve -listen unix:/tmp/kics.sock -queries-path /queries/terraform
+//	kics-serve -socket /tmp/kics.sock -queries-path /queries/terraform
+//
+// It listens on a unix socket only, readable and writable by its own user: a job is trusted like the
+// arguments of `kics scan`, so only a local caller that could run the CLI itself can send one.
 //
 // POST /scan  body: JSON with `kics scan` flag names, e.g.
 //
 //	{"path":["/work/plan.json"],"queries-path":["/work/rules","/queries/terraform"],
 //	 "output-path":"/work","output-name":"results","report-formats":["json"],"type":["Terraform"]}
 //
-// reply: {"durationSec":..,"error":""}; the report is written to <output-path>/<output-name>.json as by the CLI.
+// path and output-path are required; other fields left out take the `kics scan` defaults, and queries-path
+// defaults to the stock queries. reply: {"durationSec":..,"error":""}; the report is written to
+// <output-path>/<output-name>.json as by the CLI.
 // GET /healthz -> 200 once warm; GET /stats -> heap and cache counters.
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/Checkmarx/kics/v2/pkg/engine"
@@ -47,14 +53,48 @@ type job struct {
 	CloudProvider      []string `json:"cloud-provider"`
 }
 
+// prepare rejects a job that cannot produce a report and gives the fields it leaves out the `kics scan`
+// defaults; queries default to the stock queries the process was started with.
+func (j *job) prepare(stock string) error {
+	if len(j.Path) == 0 {
+		return errors.New("path is required")
+	}
+	if j.OutputPath == "" {
+		return errors.New("output-path is required")
+	}
+	if len(j.QueriesPath) == 0 {
+		j.QueriesPath = []string{stock}
+	}
+	if j.OutputName == "" {
+		j.OutputName = "results"
+	}
+	j.OutputName = filepath.Base(j.OutputName) // as the CLI: a file name inside output-path
+	if j.MaxFileSize == 0 {
+		j.MaxFileSize = 5 // MB; 0 would skip every non-empty file
+	}
+	if j.Timeout == 0 {
+		j.Timeout = 60 // seconds; 0 would cancel the scan at once
+	}
+	if len(j.CloudProvider) == 0 {
+		j.CloudProvider = []string{""}
+	}
+	if len(j.Type) == 0 {
+		j.Type = []string{""} // all platforms; the analyzer reads the first element
+	}
+	return nil
+}
+
 func main() {
-	listen := flag.String("listen", "unix:/tmp/kics.sock", "unix:/path or host:port")
+	socket := flag.String("socket", "/tmp/kics.sock", "unix socket to listen on")
 	stock := flag.String("queries-path", "./assets/queries/terraform", "stock queries compiled at start")
 	maxConc := flag.Int("max-concurrent", 8, "scans running at once")
 	customCache := flag.Int("custom-query-cache", engine.DefaultCustomQueryCacheSize, "compiled custom queries kept")
 	logLevel := flag.String("log-level", "error", "zerolog level; debug prints per-query durations")
 	sharedCompiler := flag.Bool("shared-compiler", true, "compile stock queries once at start; false = compile per scan like the CLI")
 	flag.Parse()
+	if *maxConc < 1 {
+		fatal(errors.New("-max-concurrent must be at least 1"))
+	}
 	lvl, err := zerolog.ParseLevel(*logLevel)
 	fatal(err)
 	zerolog.SetGlobalLevel(lvl)
@@ -90,6 +130,10 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := j.prepare(*stock); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		sem <- struct{}{}
 		defer func() { <-sem }()
 		t := time.Now()
@@ -101,33 +145,23 @@ func main() {
 		_ = json.NewEncoder(w).Encode(res)
 	})
 
-	network, addr := "tcp", *listen
-	if strings.HasPrefix(addr, "unix:") {
-		network, addr = "unix", strings.TrimPrefix(addr, "unix:")
-		_ = os.Remove(addr)
-	}
-	ln, err := net.Listen(network, addr)
+	_ = os.Remove(*socket)
+	ln, err := net.Listen("unix", *socket)
 	fatal(err)
+	fatal(os.Chmod(*socket, 0o600))
 	fatal(http.Serve(ln, mux))
 }
 
-// run mirrors what `kics scan` builds from its flags (internal/console/scan.go getScanParameters),
-// with the CLI defaults for flags a job does not set.
+// run mirrors what `kics scan` builds from its flags (internal/console/scan.go getScanParameters)
+// for a prepared job.
 func run(ctx context.Context, j job) error {
 	if err := os.MkdirAll(j.OutputPath, 0o755); err != nil {
 		return err
 	}
-	cloud := j.CloudProvider
-	if len(cloud) == 0 {
-		cloud = []string{""}
-	}
-	if j.Timeout == 0 {
-		j.Timeout = 60 // the CLI default; 0 would cancel the scan at once
-	}
 	p := &scan.Parameters{
 		Path: j.Path, QueriesPath: j.QueriesPath, ExcludeQueries: j.ExcludeQueries,
 		OutputPath: j.OutputPath, OutputName: j.OutputName, ReportFormats: j.ReportFormats,
-		Platform: j.Type, CloudProvider: cloud, MaxFileSizeFlag: j.MaxFileSize,
+		Platform: j.Type, ExcludePlatform: []string{""}, CloudProvider: j.CloudProvider, MaxFileSizeFlag: j.MaxFileSize,
 		SecretsRegexesPath: j.SecretsRegexesPath, QueryExecTimeout: j.Timeout,
 		PreviewLines: 3, MaxResolverDepth: 15, LibrariesPath: "./assets/libraries",
 		ChangedDefaultQueryPath: true, ScanID: uuid.NewString(),

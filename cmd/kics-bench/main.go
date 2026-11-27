@@ -56,7 +56,7 @@ func main() {
 		srvErr = &bytes.Buffer{}
 		t := time.Now()
 		cpu0 := cpuUsec()
-		cmd := exec.Command(*serve, "-listen", "unix:"+sock, "-queries-path", *stock, "-max-concurrent", "64")
+		cmd := exec.Command(*serve, "-socket", sock, "-queries-path", *stock, "-max-concurrent", "64")
 		cmd.Stderr, cmd.Stdout = &lockedWriter{w: srvErr}, nil
 		must(cmd.Start())
 		defer cmd.Process.Kill()
