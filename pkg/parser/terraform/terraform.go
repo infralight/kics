@@ -28,13 +28,17 @@ type Parser struct {
 	convertFunc       Converter
 	numOfRetries      int
 	terraformVarsPath string
+	// inputVariables was a package global; one map per Parser (one Parser per scan) keeps
+	// concurrent scans in one process apart while keeping per-scan behaviour unchanged.
+	inputVariables converter.VariableMap
 }
 
 // NewDefault initializes a parser with Parser default values
 func NewDefault() *Parser {
 	return &Parser{
-		numOfRetries: RetriesDefaultValue,
-		convertFunc:  converter.DefaultConverted,
+		numOfRetries:   RetriesDefaultValue,
+		convertFunc:    converter.DefaultConverted,
+		inputVariables: make(converter.VariableMap),
 	}
 }
 
@@ -54,8 +58,8 @@ func (p *Parser) Resolve(fileContent []byte, filename string, _ bool, _ int) ([]
 			masterUtils.HandlePanic(r, errMessage)
 		}
 	}()
-	getInputVariables(filepath.Dir(filename), string(fileContent), p.terraformVarsPath)
-	getDataSourcePolicy(filepath.Dir(filename))
+	getInputVariables(p.inputVariables, filepath.Dir(filename), string(fileContent), p.terraformVarsPath)
+	getDataSourcePolicy(p.inputVariables, filepath.Dir(filename))
 	return fileContent, nil
 }
 
@@ -186,7 +190,7 @@ func (p *Parser) Parse(path string, content []byte) ([]model.Document, []int, er
 
 	linesToIgnore := comment.GetIgnoreLines(ignore, file.Body.(*hclsyntax.Body))
 
-	fc, parseErr := p.convertFunc(file, inputVariableMap)
+	fc, parseErr := p.convertFunc(file, p.inputVariables)
 	json, err := addExtraInfo([]model.Document{fc}, path)
 	if err != nil {
 		return json, []int{}, errors.Wrap(err, "failed terraform parse")

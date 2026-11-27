@@ -14,8 +14,6 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-var inputVariableMap = make(converter.VariableMap)
-
 func mergeMaps(baseMap, newItems converter.VariableMap) {
 	for key, value := range newItems {
 		baseMap[key] = value
@@ -87,7 +85,7 @@ func getInputVariablesFromFile(filename string) (converter.VariableMap, error) {
 	return variables, nil
 }
 
-func getInputVariables(currentPath, fileContent, terraformVarsPath string) {
+func getInputVariables(inputVariableMap converter.VariableMap, currentPath, fileContent, terraformVarsPath string) {
 	variablesMap := make(converter.VariableMap)
 	tfFiles, err := filepath.Glob(filepath.Join(currentPath, "*.tf"))
 	if err != nil {
