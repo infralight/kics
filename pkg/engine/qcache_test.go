@@ -7,6 +7,7 @@ import (
 
 	"github.com/Checkmarx/kics/v2/pkg/engine/source"
 	"github.com/Checkmarx/kics/v2/pkg/model"
+	"github.com/Checkmarx/kics/v2/test"
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/stretchr/testify/require"
@@ -14,7 +15,9 @@ import (
 
 func stockTerraform(t *testing.T) ([]model.QueryMetadata, source.RegoLibraries, source.RegoLibraries) {
 	t.Helper()
-	src := source.NewFilesystemSource([]string{filepath.FromSlash("../../assets/queries/terraform")},
+	// paths are relative to the repository root, as in the other tests of this package
+	require.NoError(t, test.ChangeCurrentDir("kics"))
+	src := source.NewFilesystemSource([]string{filepath.FromSlash("./assets/queries/terraform")},
 		[]string{"terraform"}, []string{""}, source.LibrariesDefaultBasePath, false)
 	queries, err := src.GetQueries(&source.QueryInspectorParameters{})
 	require.NoError(t, err)
