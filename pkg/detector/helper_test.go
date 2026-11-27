@@ -3,6 +3,8 @@ package detector
 import (
 	"fmt"
 	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/Checkmarx/kics/v2/pkg/model"
@@ -423,4 +425,15 @@ func TestDetectCurrentLine(t *testing.T) {
 		})
 	}
 
+}
+
+// TestLeadingSpaces checks that trimming leadingSpaces is the same as the `^\s+` replacement it stands for
+func TestLeadingSpaces(t *testing.T) {
+	re := regexp.MustCompile(`^\s+`)
+	for _, line := range []string{
+		"", " ", "x", "  \"key\": 1", "\t\tkey = 1  ", " \t\n\f\r x \t", "\n\n", "a b", "a\n  b",
+		"\vx", " \vx", "\u00a0x", " \u00a0 x", "\u0085x", "\u2003x", "\u3000x", "\x00 x", " \xff x", "\xff x",
+	} {
+		require.Equal(t, re.ReplaceAllString(line, ""), strings.TrimLeft(line, leadingSpaces), "%q", line)
+	}
 }

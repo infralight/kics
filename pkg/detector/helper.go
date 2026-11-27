@@ -18,6 +18,10 @@ var (
 	nameRegexDocker = regexp.MustCompile(`{{(.*?)}}`)
 )
 
+// leadingSpaces is the set the regexp class \s matches: checkLine used to strip `^\s+` with a regexp,
+// and it runs for every line of the file, for every part of every finding's search key
+const leadingSpaces = "\t\n\f\r "
+
 const (
 	namePartsLength  = 3
 	valuePartsLength = 2
@@ -272,8 +276,7 @@ func (d *DefaultDetectLineResponse) DetectCurrentLine(str1, str2 string, recurse
 }
 
 func checkLine(str1, str2 string, distances map[int]int, line string, i int) map[int]int {
-	regex := regexp.MustCompile(`^\s+`)
-	line = regex.ReplaceAllString(line, "")
+	line = strings.TrimLeft(line, leadingSpaces)
 	if str1 != "" && str2 != "" && strings.Contains(line, str1) {
 		restLine := line[strings.Index(line, str1)+len(str1):]
 		if strings.Contains(restLine, str2) {
